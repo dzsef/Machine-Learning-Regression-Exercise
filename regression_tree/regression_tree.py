@@ -9,7 +9,12 @@ class DecisionTreeNode:
     threshold: Optional[float] = None
     left_child: Optional["DecisionTreeNode"] = None
     right_child: Optional["DecisionTreeNode"] = None
-    value: Optional[float] = None  
+    value: Optional[float] = None 
+    n_samples: int = 0
+    sum_y: float = 0.0
+    sum_y_squared: float = 0.0
+    subtree_rss: float = 0.0
+    subtree_leaves: int = 1
 
     def is_leaf(self) -> bool:
         return self.value is not None
