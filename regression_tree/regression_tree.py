@@ -129,6 +129,10 @@ class MyDecisionTreeRegressor:
             threshold=best_threshold,
             left_child=left_child,
             right_child=right_child,
+            value=None,
+            n_samples=n_samples,
+            sum_y=sum_y,
+            sum_y_squared=sum_y_squared,
         )
 
     def predict_row(self, row, node: DecisionTreeNode) -> float:
