@@ -38,6 +38,9 @@ class MyDecisionTreeRegressor:
 
         self.root = self.build_tree(X, y, depth=0)
 
+        if self.ccp_alpha is not None and self.ccp_alpha > 0.0 and self.root is not None:
+            self.prune_with_cost_complexity(self.ccp_alpha)
+
     def predict(self, X):
         X = np.asarray(X)
         if X.ndim == 1:
@@ -46,15 +49,23 @@ class MyDecisionTreeRegressor:
 
     def build_tree(self, X, y, depth: int) -> DecisionTreeNode:
         num_samples, num_features = X.shape
+        n_samples = int(num_samples)
+        sum_y = float(y.sum())
+        sum_y_squared = float((y ** 2).sum())
 
-        # stopping conditions
+        # pre pruning
         if (
             depth >= self.max_depth
-            or num_samples < self.min_samples_split
+            or num_samples < self.min_samples
             or np.all(y == y[0])
         ):
-            leaf_value = float(y.mean())
-            return DecisionTreeNode(value=leaf_value)
+            leaf_value = sum_y / n_samples
+            return DecisionTreeNode(
+                value=leaf_value,
+                n_samples=n_samples,
+                sum_y=sum_y,
+                sum_y_squared=sum_y_squared,
+            )
 
         best_feature_index = None
         best_threshold = None
@@ -62,15 +73,14 @@ class MyDecisionTreeRegressor:
         best_left_mask = None
         best_right_mask = None
 
-        # search best split over all features
+        # search best split using RSS
         for feature_index in range(num_features):
             feature_values = X[:, feature_index]
 
             sorted_indices = np.argsort(feature_values)
             sorted_feature_values = feature_values[sorted_indices]
-            sorted_targets = y[sorted_indices]
 
-            # candidate thresholds: midpoints between distinct consecutive values
+            # candidate thresholds are the  midpoints between distinct consecutive values
             for i in range(1, num_samples):
                 if sorted_feature_values[i] == sorted_feature_values[i - 1]:
                     continue
