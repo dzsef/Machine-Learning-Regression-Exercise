@@ -17,7 +17,7 @@ class DecisionTreeNode:
     subtree_leaves: int = 1
 
     def is_leaf(self) -> bool:
-        return self.value is not None
+        return self.left_child is None and self.right_child is None
 
 
 class MyDecisionTreeRegressor:
