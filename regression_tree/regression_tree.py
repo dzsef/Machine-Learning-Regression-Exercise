@@ -1,6 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Tuple
 
 
 @dataclass
@@ -136,10 +136,73 @@ class MyDecisionTreeRegressor:
         )
 
     def predict_row(self, row, node: DecisionTreeNode) -> float:
-        if node.is_leaf():
-            return node.value
+        current = node
+        while not current.is_leaf():
+            if row[current.feature_index] <= current.threshold:
+                current = current.left_child
+            else:
+                current = current.right_child
+        return current.value
 
-        if row[node.feature_index] <= node.threshold:
-            return self.predict_row(row, node.left_child)
-        else:
-            return self.predict_row(row, node.right_child)
+    # Cost complexity pruning
+
+    def leaf_rss(self, node: DecisionTreeNode) -> float:
+        if node.n_samples == 0:
+            return 0.0
+        mean = node.sum_y / node.n_samples
+        return node.sum_y_squared - node.n_samples * (mean ** 2)
+
+    def compute_subtree_info(self, node: DecisionTreeNode):
+        if node.is_leaf():
+            node.subtree_rss = self.leaf_rss(node)
+            node.subtree_leaves = 1
+            return
+        self.compute_subtree_info(node.left_child)
+        self.compute_subtree_info(node.right_child)
+        node.subtree_rss = node.left_child.subtree_rss + node.right_child.subtree_rss
+        node.subtree_leaves = node.left_child.subtree_leaves + node.right_child.subtree_leaves
+
+    def collect_alpha_values(self, node: DecisionTreeNode, values: List[Tuple[DecisionTreeNode, float]]):
+        if node.is_leaf():
+            return
+        if node.subtree_leaves > 1:
+            rss_if_leaf = self.leaf_rss(node)
+            alpha = (rss_if_leaf - node.subtree_rss) / (node.subtree_leaves - 1)
+            values.append((node, alpha))
+        if node.left_child is not None:
+            self.collect_alpha_values(node.left_child, values)
+        if node.right_child is not None:
+            self.collect_alpha_values(node.right_child, values)
+
+    def prune_with_cost_complexity(self, alpha: float):
+        if self.root is None or self.root.is_leaf():
+            return
+
+        tolerance = 0.000000000001
+
+        while True:
+            self.compute_subtree_info(self.root)
+
+            alpha_list: List[Tuple[DecisionTreeNode, float]] = []
+            self.collect_alpha_values(self.root, alpha_list)
+
+            if not alpha_list:
+                break
+
+            min_alpha = min(a for (_, a) in alpha_list)
+
+            if min_alpha > alpha + tolerance:
+                break
+
+            nodes_to_prune = [node for (node, a) in alpha_list if abs(a - min_alpha) <= tolerance]
+
+            for node in nodes_to_prune:
+                if node.n_samples > 0:
+                    node.value = node.sum_y / node.n_samples
+                else:
+                    node.value = 0.0
+                node.left_child = None
+                node.right_child = None
+
+            if self.root.is_leaf():
+                break
