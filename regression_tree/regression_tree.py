@@ -21,22 +21,20 @@ class DecisionTreeNode:
 
 
 class MyDecisionTreeRegressor:
-    def __init__(self, max_depth: int = 5, min_samples_split: int = 2):
+    def __init__(
+        self,
+        max_depth: int = 5,
+        min_samples: int = 1,
+        ccp_alpha: float = 0.0,
+    ):
         self.max_depth = max_depth
-        self.min_samples_split = min_samples_split
+        self.min_samples = min_samples
+        self.ccp_alpha = ccp_alpha
         self.root: Optional[DecisionTreeNode] = None
 
     def fit(self, X, y):
         X = np.asarray(X)
         y = np.asarray(y)
-
-        # basic error handling, TODO 
-        if X.ndim != 2:
-            raise ValueError("X should be a 2d array")
-        if y.ndim != 1:
-            raise ValueError("y should be a 1d array")
-        if X.shape[0] != y.shape[0]:
-            raise ValueError("X and y must have the same number of samples")
 
         self.root = self.build_tree(X, y, depth=0)
 
