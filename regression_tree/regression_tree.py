@@ -99,12 +99,13 @@ class MyDecisionTreeRegressor:
                 left_mean = left_targets.mean()
                 right_mean = right_targets.mean()
 
-                weighted_loss = (
-                    left_targets.size * left_mse + right_targets.size * right_mse
-                ) / num_samples
+                left_rss = np.sum((left_targets - left_mean) ** 2)
+                right_rss = np.sum((right_targets - right_mean) ** 2)
 
-                if weighted_loss < best_loss:
-                    best_loss = weighted_loss
+                loss = left_rss + right_rss
+
+                if loss < best_loss:
+                    best_loss = loss
                     best_feature_index = feature_index
                     best_threshold = threshold
                     best_left_mask = left_mask
@@ -112,8 +113,13 @@ class MyDecisionTreeRegressor:
 
         # if no valid split was found, make a leaf
         if best_feature_index is None:
-            leaf_value = float(y.mean())
-            return DecisionTreeNode(value=leaf_value)
+            leaf_value = sum_y / n_samples
+            return DecisionTreeNode(
+                value=leaf_value,
+                n_samples=n_samples,
+                sum_y=sum_y,
+                sum_y_squared=sum_y_squared,
+            )
 
         left_child = self.build_tree(X[best_left_mask], y[best_left_mask], depth + 1)
         right_child = self.build_tree(X[best_right_mask], y[best_right_mask], depth + 1)
