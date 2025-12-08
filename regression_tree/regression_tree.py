@@ -96,8 +96,8 @@ class MyDecisionTreeRegressor:
                 left_targets = y[left_mask]
                 right_targets = y[right_mask]
 
-                left_mse = np.mean((left_targets - left_targets.mean()) ** 2)
-                right_mse = np.mean((right_targets - right_targets.mean()) ** 2)
+                left_mean = left_targets.mean()
+                right_mean = right_targets.mean()
 
                 weighted_loss = (
                     left_targets.size * left_mse + right_targets.size * right_mse
