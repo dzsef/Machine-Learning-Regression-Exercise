@@ -1,6 +1,10 @@
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional, List, Tuple
+from typing import Optional
+import copy
+
+from sklearn.model_selection import KFold
+from sklearn.metrics import mean_squared_error
 
 
 @dataclass
@@ -9,7 +13,9 @@ class DecisionTreeNode:
     threshold: Optional[float] = None
     left_child: Optional["DecisionTreeNode"] = None
     right_child: Optional["DecisionTreeNode"] = None
-    value: Optional[float] = None 
+    value: Optional[float] = None  
+
+    # stats for post pruning
     n_samples: int = 0
     sum_y: float = 0.0
     sum_y_squared: float = 0.0
@@ -21,25 +27,20 @@ class DecisionTreeNode:
 
 
 class MyDecisionTreeRegressor:
-    def __init__(
-        self,
-        max_depth: int = 5,
-        min_samples: int = 1,
-        ccp_alpha: float = 0.0,
-    ):
+    def __init__(self, max_depth: int = 10, min_samples: int = 1):
         self.max_depth = max_depth
         self.min_samples = min_samples
-        self.ccp_alpha = ccp_alpha
         self.root: Optional[DecisionTreeNode] = None
+
+        # only when post pruning
+        self.best_alpha: Optional[float] = None
+        self.alpha_candidates: Optional[list[float]] = None
+        self.alpha_cv_errors: Optional[list[float]] = None
 
     def fit(self, X, y):
         X = np.asarray(X)
         y = np.asarray(y)
-
         self.root = self.build_tree(X, y, depth=0)
-
-        if self.ccp_alpha is not None and self.ccp_alpha > 0.0 and self.root is not None:
-            self.prune_with_cost_complexity(self.ccp_alpha)
 
     def predict(self, X):
         X = np.asarray(X)
@@ -47,8 +48,18 @@ class MyDecisionTreeRegressor:
             X = X.reshape(1, -1)
         return np.array([self.predict_row(row, self.root) for row in X])
 
+    def predict_row(self, row, node: DecisionTreeNode) -> float:
+        current = node
+        while not current.is_leaf():
+            if row[current.feature_index] <= current.threshold:
+                current = current.left_child
+            else:
+                current = current.right_child
+        return current.value
+
     def build_tree(self, X, y, depth: int) -> DecisionTreeNode:
         num_samples, num_features = X.shape
+
         n_samples = int(num_samples)
         sum_y = float(y.sum())
         sum_y_squared = float((y ** 2).sum())
@@ -65,6 +76,8 @@ class MyDecisionTreeRegressor:
                 n_samples=n_samples,
                 sum_y=sum_y,
                 sum_y_squared=sum_y_squared,
+                subtree_rss=0.0,
+                subtree_leaves=1,
             )
 
         best_feature_index = None
@@ -73,7 +86,7 @@ class MyDecisionTreeRegressor:
         best_left_mask = None
         best_right_mask = None
 
-        # search best split using RSS
+        # search best split over all features using RSS
         for feature_index in range(num_features):
             feature_values = X[:, feature_index]
 
@@ -119,6 +132,8 @@ class MyDecisionTreeRegressor:
                 n_samples=n_samples,
                 sum_y=sum_y,
                 sum_y_squared=sum_y_squared,
+                subtree_rss=0.0,
+                subtree_leaves=1,
             )
 
         left_child = self.build_tree(X[best_left_mask], y[best_left_mask], depth + 1)
@@ -133,23 +148,17 @@ class MyDecisionTreeRegressor:
             n_samples=n_samples,
             sum_y=sum_y,
             sum_y_squared=sum_y_squared,
+            subtree_rss=0.0,
+            subtree_leaves=0,
         )
 
-    def predict_row(self, row, node: DecisionTreeNode) -> float:
-        current = node
-        while not current.is_leaf():
-            if row[current.feature_index] <= current.threshold:
-                current = current.left_child
-            else:
-                current = current.right_child
-        return current.value
-
-    # Cost complexity pruning
+    # post pruning helpers
 
     def leaf_rss(self, node: DecisionTreeNode) -> float:
         if node.n_samples == 0:
             return 0.0
         mean = node.sum_y / node.n_samples
+        # RSS = sum(y^2) - n * mean^2
         return node.sum_y_squared - node.n_samples * (mean ** 2)
 
     def compute_subtree_info(self, node: DecisionTreeNode):
@@ -157,44 +166,60 @@ class MyDecisionTreeRegressor:
             node.subtree_rss = self.leaf_rss(node)
             node.subtree_leaves = 1
             return
+
         self.compute_subtree_info(node.left_child)
         self.compute_subtree_info(node.right_child)
-        node.subtree_rss = node.left_child.subtree_rss + node.right_child.subtree_rss
-        node.subtree_leaves = node.left_child.subtree_leaves + node.right_child.subtree_leaves
 
-    def collect_alpha_values(self, node: DecisionTreeNode, values: List[Tuple[DecisionTreeNode, float]]):
+        node.subtree_rss = (
+            node.left_child.subtree_rss + node.right_child.subtree_rss
+        )
+        node.subtree_leaves = (
+            node.left_child.subtree_leaves + node.right_child.subtree_leaves
+        )
+
+    def collect_alpha_values(
+        self,
+        node: DecisionTreeNode,
+        values: list[tuple[DecisionTreeNode, float]],
+    ):
         if node.is_leaf():
             return
+
         if node.subtree_leaves > 1:
             rss_if_leaf = self.leaf_rss(node)
             alpha = (rss_if_leaf - node.subtree_rss) / (node.subtree_leaves - 1)
             values.append((node, alpha))
+
         if node.left_child is not None:
             self.collect_alpha_values(node.left_child, values)
         if node.right_child is not None:
             self.collect_alpha_values(node.right_child, values)
 
-    def prune_with_cost_complexity(self, alpha: float):
-        if self.root is None or self.root.is_leaf():
-            return
+    def cost_complexity_pruning_path(self) -> tuple[list[float], list[DecisionTreeNode]]:
+        if self.root is None:
+            raise ValueError("Man please call fit before post pruning")
+
+        current_root = copy.deepcopy(self.root)
+
+        ccp_alphas: list[float] = [0.0]
+        subtrees: list[DecisionTreeNode] = [copy.deepcopy(current_root)]
 
         tolerance = 0.000000000001
 
-        while True:
-            self.compute_subtree_info(self.root)
+        while not current_root.is_leaf():
+            self.compute_subtree_info(current_root)
 
-            alpha_list: List[Tuple[DecisionTreeNode, float]] = []
-            self.collect_alpha_values(self.root, alpha_list)
+            alpha_list: list[tuple[DecisionTreeNode, float]] = []
+            self.collect_alpha_values(current_root, alpha_list)
 
             if not alpha_list:
                 break
 
             min_alpha = min(a for (_, a) in alpha_list)
 
-            if min_alpha > alpha + tolerance:
-                break
-
-            nodes_to_prune = [node for (node, a) in alpha_list if abs(a - min_alpha) <= tolerance]
+            nodes_to_prune = [
+                node for (node, a) in alpha_list if abs(a - min_alpha) <= tolerance
+            ]
 
             for node in nodes_to_prune:
                 if node.n_samples > 0:
@@ -204,5 +229,104 @@ class MyDecisionTreeRegressor:
                 node.left_child = None
                 node.right_child = None
 
-            if self.root.is_leaf():
+            ccp_alphas.append(float(min_alpha))
+            subtrees.append(copy.deepcopy(current_root))
+
+            if current_root.is_leaf():
                 break
+
+        return ccp_alphas, subtrees
+
+    def predict_with_root(self, X, root: DecisionTreeNode):
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        return np.array([self.predict_row(row, root) for row in X])
+
+    def select_subtree_for_alpha(
+        self,
+        alphas: list[float],
+        subtrees: list[DecisionTreeNode],
+        alpha_candidate: float,
+    ) -> DecisionTreeNode:
+        
+        best_index = 0
+        for index, alpha_value in enumerate(alphas):
+            if alpha_value <= alpha_candidate:
+                best_index = index
+            else:
+                break
+        return subtrees[best_index]
+
+
+    def post_prune_with_cross_validation(
+        self,
+        X,
+        y,
+        n_splits: int = 10,
+        random_state: int = 42,
+    ) -> float:
+        if self.root is None:
+            raise ValueError("Man please call fit before post pruning")
+
+        # global pruning path from the already fitted T0
+        global_alphas, global_subtrees = self.cost_complexity_pruning_path()
+        candidate_alphas = list(global_alphas)
+
+        # prepare folds and for each fold compute its own pruning path
+        kfold = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+
+        fold_results: list[tuple[list[float], list[DecisionTreeNode], np.ndarray, np.ndarray]] = []
+
+        for train_index, val_index in kfold.split(X):
+            X_train_fold = X[train_index]
+            y_train_fold = y[train_index]
+            X_val_fold = X[val_index]
+            y_val_fold = y[val_index]
+
+            fold_tree = MyDecisionTreeRegressor(
+                max_depth=self.max_depth,
+                min_samples=self.min_samples,
+            )
+            fold_tree.fit(X_train_fold, y_train_fold)
+            alphas_fold, subtrees_fold = fold_tree.cost_complexity_pruning_path()
+
+            fold_results.append(
+                (alphas_fold, subtrees_fold, X_val_fold, y_val_fold)
+            )
+
+        # for each candidate alpha compute mean cv error over folds
+        mean_mse_for_alpha: list[float] = []
+
+        for alpha_candidate in candidate_alphas:
+            fold_mse_values: list[float] = []
+
+            for alphas_fold, subtrees_fold, X_val_fold, y_val_fold in fold_results:
+                subtree_root = self.select_subtree_for_alpha(
+                    alphas_fold,
+                    subtrees_fold,
+                    alpha_candidate,
+                )
+                y_pred_val = self.predict_with_root(X_val_fold, subtree_root)
+                mse = mean_squared_error(y_val_fold, y_pred_val)
+                fold_mse_values.append(mse)
+
+            mean_mse_for_alpha.append(float(np.mean(fold_mse_values)))
+
+        # choose the alpha with the smallest mean cv error
+        best_index = int(np.argmin(mean_mse_for_alpha))
+        best_alpha = candidate_alphas[best_index]
+
+        # select the corresponding subtree 
+        final_root = self.select_subtree_for_alpha(
+            global_alphas,
+            global_subtrees,
+            best_alpha,
+        )
+
+        self.root = final_root
+        self.best_alpha = best_alpha
+        self.alpha_candidates = candidate_alphas
+        self.alpha_cv_errors = mean_mse_for_alpha
+
+        return best_alpha
