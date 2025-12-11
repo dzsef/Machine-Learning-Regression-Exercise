@@ -21,7 +21,12 @@ class Preprocess:
     def preprocess_data(self):
         df = pd.read_csv(self.file_path)
 
-        # drop rows with missing tartget
+        if self.file_path == "used_cars.csv":
+            carname = df["CarName"].astype(str).apply(lambda x: x.strip())
+            df["brand"] = carname.apply(lambda x: x.split(" ")[0] if x else "")
+            df["model"] = carname.apply(lambda x: " ".join(x.split(" ")[1:]) if x else "")
+
+        # drop rows with missing tartget (after target cleaning)
         df = df.dropna(subset=[self.target_column])
 
         nunique = df.nunique()
@@ -48,9 +53,6 @@ class Preprocess:
 
         if columns_to_drop:
             df = df.drop(columns=columns_to_drop)
-            
-        if self.target_column == 'price':
-            df['price'] = df['price'].str.replace('$', '', regex=False).str.replace(',', '', regex=False).astype(float)
 
         # Imputing
         # numeric: median, categorical: Unknown
@@ -67,6 +69,23 @@ class Preprocess:
         for col in categorical_columns:
             if df[col].isna().any():
                 df[col] = df[col].fillna("Unknown")
+
+        # feature engineering for the used_cars dataset
+        if self.file_path == "used_cars.csv":
+            # power to weight ratio
+            if "horsepower" in df.columns and "curbweight" in df.columns:
+                df["power_to_weight_ratio"] = df["horsepower"] / df["curbweight"]
+
+            # squared terms for original numeric features 
+            for col in numeric_columns:
+                if col == self.target_column:
+                    continue
+                if col in df.columns:
+                    df[f"{col}_squared"] = df[col] ** 2
+
+            # log transformed engine size
+            if "enginesize" in df.columns:
+                df["log_enginesize"] = np.log(df["enginesize"] + 1)
 
         y = df[self.target_column].values
         X = df.drop(columns=[self.target_column])
