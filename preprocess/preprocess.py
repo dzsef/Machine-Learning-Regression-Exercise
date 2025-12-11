@@ -26,7 +26,7 @@ class Preprocess:
             df["brand"] = carname.apply(lambda x: x.split(" ")[0] if x else "")
             df["model"] = carname.apply(lambda x: " ".join(x.split(" ")[1:]) if x else "")
 
-        # drop rows with missing tartget (after target cleaning)
+        # drop rows with missing tartget
         df = df.dropna(subset=[self.target_column])
 
         nunique = df.nunique()
