@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-
+from sklearn.preprocessing import StandardScaler
 
 class Preprocess:
     def __init__(
@@ -10,11 +10,13 @@ class Preprocess:
         target_column: str = "exam_score",
         test_size: float = 0.1,
         random_state: int = 42,
+        scale = False
     ):
         self.file_path = file_path
         self.target_column = target_column
         self.test_size = test_size
         self.random_state = random_state
+        self.scale = scale
 
     def preprocess_data(self):
         df = pd.read_csv(self.file_path)
@@ -46,6 +48,9 @@ class Preprocess:
 
         if columns_to_drop:
             df = df.drop(columns=columns_to_drop)
+            
+        if self.target_column == 'price':
+            df['price'] = df['price'].str.replace('$', '', regex=False).str.replace(',', '', regex=False).astype(float)
 
         # Imputing
         # numeric: median, categorical: Unknown
@@ -77,5 +82,14 @@ class Preprocess:
             test_size=self.test_size,
             random_state=self.random_state,
         )
+        
+        if self.scale:
+            scaler = StandardScaler()
+            
+            # Fit ONLY on training data to learn mean/std
+            X_train = scaler.fit_transform(X_train)
+            
+            # Use the learned mean/std to transform test data
+            X_test = scaler.transform(X_test)
 
         return X_train, X_test, y_train, y_test
