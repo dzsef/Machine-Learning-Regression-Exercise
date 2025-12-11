@@ -9,7 +9,7 @@ class MyRandomForestRegressor:
         max_depth:int = 10,
         min_samples: int = 1,
         max_features=None,
-        random_state: int | None = None,
+        random_state: int | None = 42,
     ):
         self.n_estimators = n_estimators
         self.max_depth = max_depth
