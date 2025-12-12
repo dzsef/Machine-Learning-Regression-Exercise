@@ -94,6 +94,9 @@ class Preprocess:
         categorical_columns = X.select_dtypes(include=["object", "category"]).columns.tolist()
         X = pd.get_dummies(X, columns=categorical_columns, drop_first=False)
 
+        # keep feature names for plotting
+        self.feature_names_ = X.columns.tolist()
+
         # 90/10 split
         X_train, X_test, y_train, y_test = train_test_split(
             X.values,
