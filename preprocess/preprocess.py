@@ -103,9 +103,6 @@ class Preprocess:
             ca_map = {"no": 0, "local": 1, "metastatic": 2}
             df["ca_severity"] = df["ca"].map(ca_map)
 
-            # dimple DNR indicator 
-            df["dnr_flag"] = df["dnr"].astype(str).str.contains("dnr", case=False).astype(int)
-
             # Any comorbidity flag based on num.co
             df["has_comorbidity"] = (df["num.co"] > 0).astype(int)
 
