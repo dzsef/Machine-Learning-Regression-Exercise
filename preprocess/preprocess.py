@@ -98,24 +98,6 @@ class Preprocess:
             # simple wellbeing index
             df["wellbeing_index"] = df["mental_health_rating"] + df["exercise_frequency"]
 
-        if self.file_path == "support2.csv":
-            # cancer severity as an ordinal feature
-            ca_map = {"no": 0, "local": 1, "metastatic": 2}
-            df["ca_severity"] = df["ca"].map(ca_map)
-
-            # Any comorbidity flag based on num.co
-            df["has_comorbidity"] = (df["num.co"] > 0).astype(int)
-
-            # binary flags for diabetes and dementia 
-            for col in ["diabetes", "dementia"]:
-                df[col] = df[col].astype(str).str.upper()
-                df[f"{col}_flag"] = (df[col].str.startswith("Y")).astype(int)
-
-            # log transform strongly skewed cost variables
-            for col in ["charges", "totcst", "totmcst"]:
-                df[f"log_{col}"] = np.log(df[col] + 1.0)
-
-
         y = df[self.target_column].values
         X = df.drop(columns=[self.target_column])
 
