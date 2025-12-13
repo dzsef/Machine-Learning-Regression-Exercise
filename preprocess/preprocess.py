@@ -82,10 +82,23 @@ class Preprocess:
                     continue
                 if col in df.columns:
                     df[f"{col}_squared"] = df[col] ** 2
-
+                    
             # log transformed engine size
             if "enginesize" in df.columns:
                 df["log_enginesize"] = np.log(df["enginesize"] + 1)
+                
+                
+        if self.file_path == "student_habits_performance.csv":
+            # total screen time
+            df["total_screen_hours"] = df["social_media_hours"] + df["netflix_hours"]
+            
+            # study to screen ratio
+            df["study_to_screen_ratio"] = df["study_hours_per_day"] / (df["total_screen_hours"] + 1e-3)
+            
+            # simple wellbeing index
+            df["wellbeing_index"] = df["mental_health_rating"] + df["exercise_frequency"]
+
+        
 
         y = df[self.target_column].values
         X = df.drop(columns=[self.target_column])
