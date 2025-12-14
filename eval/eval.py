@@ -40,7 +40,7 @@ def plot_used_cars_results(
     plt.title(f"{prefix}Hold-out: RMSE by model")
     # value labels
     for container in ax.containers:
-        ax.bar_label(container, fmt="%.0f", padding=2, fontsize=9)
+        ax.bar_label(container, fmt="%.3f", padding=2, fontsize=9)
     plt.xticks(rotation=25, ha="right")
     plt.tight_layout()
     plt.show()
@@ -155,6 +155,7 @@ def plot_used_cars_results(
                 .sort_values(key=lambda x: np.abs(x), ascending=False)
                 .head(15)
             )
+            s.index.name = "Features"
             plt.figure(figsize=(8, 5))
             sns.barplot(x=s.values, y=s.index, orient="h")
             plt.title("Ridge: top |coefficients| (scaled features)")
@@ -170,6 +171,7 @@ def plot_used_cars_results(
                     .sort_values(ascending=False)
                     .head(15)
                 )
+                s.index.name = "Features"
                 plt.figure(figsize=(8, 5))
                 sns.barplot(x=s.values, y=s.index, orient="h")
                 plt.title(f"{name}: top feature importances")
